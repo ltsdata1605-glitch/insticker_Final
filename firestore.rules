@@ -1,0 +1,299 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users
+// Document ID: {userId} (matches Auth UID)
+// Fields:
+//   - uid: string (required, matches doc ID)
+//   - email: string (required, valid email)
+//   - role: string (required, 'admin' or 'staff')
+//   - storeId: string (required)
+//   - createdAt: timestamp (required)
+//
+// Collection: stores/{storeId}/products
+// Document ID: {productId}
+// Fields:
+//   - msp: string (required)
+//   - sanPham: string (required)
+//   - thuongERP: number (optional)
+//   - thuongNong: number (optional)
+//   - tongThuong: number (optional)
+//   - giaGoc: string (optional)
+//   - giaGiam: string (optional)
+//   - khuyenMai: string (optional)
+//   - ngayIn: string (optional)
+//   - storeId: string (required, matches parent storeId)
+//   - updatedAt: timestamp (required)
+//
+// Collection: stores/{storeId}/inventory
+// Document ID: {inventoryId}
+// Fields:
+//   - maSieuThi: string (required)
+//   - tenSieuThi: string (optional)
+//   - thuongHieu: string (optional)
+//   - nganhHang: string (optional)
+//   - nhomHang: string (optional)
+//   - maSanPham: string (required)
+//   - tenSanPham: string (optional)
+//   - trangThaiKinhDoanh: string (optional)
+//   - trangThaiSanPham: string (optional)
+//   - tongSoLuong: number (optional)
+//   - soLuongDiDuong: number (optional)
+//   - soLuongThucTe: number (optional)
+//   - soLuongDaDat: number (optional)
+//   - soLuongCoTheBan: number (optional)
+//   - sucBan: string (optional)
+//   - saleAverage: number (optional)
+//   - saleEstimate: number (optional)
+//   - storeId: string (required, matches parent storeId)
+//   - updatedAt: timestamp (required)
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if user is owner based on document's uid field
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    // Verify UID hasn't been tampered with on create
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    // Ensure uid field is not modified on update
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == resource.data.uid;
+    }
+
+    // Validate required fields exist
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Validate email format
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // Check if timestamp is recent (within last 10 minutes)
+    function isRecent(ts) {
+      return ts is timestamp && 
+             ts <= request.time && 
+             ts >= request.time - duration.value(10, 'm');
+    }
+
+    // Validate string length
+    function validString(field, maxLen) {
+      return request.resource.data[field] is string &&
+             request.resource.data[field].size() <= maxLen;
+    }
+
+    // Check if user is a super admin (by email)
+    function isSuperAdmin() {
+      return isAuthenticated() &&
+        (
+          (request.auth.token.email == "lts.truongson@gmail.com" && request.auth.token.email_verified == true) ||
+          (request.auth.token.email == "admin@example.com")
+        );
+    }
+
+    // Check if user is an admin (based on their user document)
+    function isAdmin() {
+      return isAuthenticated() &&
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+          isSuperAdmin()
+        );
+    }
+
+    // Check if user is an admin for a specific store
+    function isStoreAdmin(storeId) {
+       return isAuthenticated() && 
+         (
+           isSuperAdmin() ||
+           (
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.storeId == storeId &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+           )
+         );
+    }
+
+    // Check if user belongs to the store (staff or admin)
+    function isStoreMember(storeId) {
+       return isAuthenticated() && 
+         (
+           isSuperAdmin() ||
+           (
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.storeId == storeId
+           )
+         );
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'email', 'role', 'storeId', 'createdAt']) &&
+             data.uid is string && data.uid == request.auth.uid &&
+             data.email is string && isValidEmail(data.email) &&
+             data.role in ['admin', 'staff'] &&
+             data.storeId is string && data.storeId.size() > 0 && data.storeId.size() < 50 &&
+             data.createdAt is timestamp &&
+             (request.method == 'create' ? isRecent(data.createdAt) : true);
+    }
+
+    function isValidProduct(data) {
+      return hasRequiredFields(['msp', 'sanPham', 'storeId', 'updatedAt']) &&
+             data.msp is string && data.msp.size() > 0 && data.msp.size() < 50 &&
+             data.sanPham is string && data.sanPham.size() > 0 && data.sanPham.size() < 200 &&
+             data.storeId is string &&
+             data.updatedAt is timestamp &&
+             isRecent(data.updatedAt);
+    }
+
+    function isValidInventory(data) {
+      return hasRequiredFields(['maSieuThi', 'maSanPham', 'storeId', 'updatedAt']) &&
+             data.maSieuThi is string && data.maSieuThi.size() > 0 && data.maSieuThi.size() < 50 &&
+             data.maSanPham is string && data.maSanPham.size() > 0 && data.maSanPham.size() < 50 &&
+             data.storeId is string &&
+             data.updatedAt is timestamp &&
+             isRecent(data.updatedAt);
+    }
+
+    function isValidSavedList(data) {
+      return hasRequiredFields(['id', 'name', 'userId', 'storeId', 'createdAt', 'items', 'totalItems']) &&
+             data.id is string && data.id.size() > 0 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.storeId is string &&
+             data.createdAt is string &&
+             data.items is string && data.items.size() < 1048576 && // Max 1MB
+             data.totalItems is number && data.totalItems >= 0;
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      // Allow individual get if user is owner or admin
+      allow get: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      
+      // Allow list (queries) to check for store admins
+      // This is needed for registration and staff login verification
+      allow list: if isAuthenticated() || (request.query.limit <= 2);
+
+      // Allow create if authenticated, valid data, and UID matches
+      allow create: if isAuthenticated() && 
+                    request.auth.uid == userId &&
+                    isValidUser(request.resource.data) &&
+                    uidUnchanged();
+
+      // Allow update if user is owner or admin
+      allow update: if isAuthenticated() && 
+                    isValidUser(request.resource.data) &&
+                    (
+                      (request.auth.uid == userId && request.resource.data.role == resource.data.role) || 
+                      isAdmin()
+                    ) &&
+                    uidNotModified();
+
+      // Allow delete if admin, but NEVER allow deleting the 'admin' user
+      allow delete: if isAdmin() && resource.data.username != 'admin';
+      
+      match /state/{stateId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+    }
+
+    match /stores/{storeId} {
+      match /productChunks/{chunkId} {
+        allow read: if isAuthenticated() && isStoreMember(storeId);
+        allow write: if isStoreAdmin(storeId);
+      }
+
+      match /inventoryChunks/{chunkId} {
+        allow read: if isAuthenticated() && isStoreMember(storeId);
+        allow write: if isStoreAdmin(storeId);
+      }
+
+      match /metadata/{docId} {
+        allow read: if isAuthenticated() && isStoreMember(storeId);
+        allow write: if isStoreAdmin(storeId);
+      }
+
+      match /products/{productId} {
+        // Allow read if user belongs to the store or is admin
+        allow read: if isAuthenticated() && isStoreMember(storeId);
+        
+        // Allow write ONLY if user is store admin
+        allow create: if isStoreAdmin(storeId) && 
+                      isValidProduct(request.resource.data) &&
+                      request.resource.data.storeId == storeId;
+                      
+        allow update: if isStoreAdmin(storeId) && 
+                      isValidProduct(request.resource.data) &&
+                      request.resource.data.storeId == storeId;
+                      
+        allow delete: if isStoreAdmin(storeId);
+      }
+
+      match /inventory/{inventoryId} {
+        // Allow read if user belongs to the store or is admin
+        allow read: if isAuthenticated() && isStoreMember(storeId);
+        
+        // Allow write ONLY if user is store admin
+        allow create: if isStoreAdmin(storeId) && 
+                      isValidInventory(request.resource.data) &&
+                      request.resource.data.storeId == storeId;
+                      
+        allow update: if isStoreAdmin(storeId) && 
+                      isValidInventory(request.resource.data) &&
+                      request.resource.data.storeId == storeId;
+                      
+        allow delete: if isStoreAdmin(storeId);
+      }
+
+      match /savedLists/{listId} {
+        // Allow read if user belongs to the store or is admin
+        allow read: if isAuthenticated() && isStoreMember(storeId);
+        
+        // Allow create if user belongs to the store or is admin
+        allow create: if isAuthenticated() && isStoreMember(storeId) && 
+                      isValidSavedList(request.resource.data) &&
+                      request.resource.data.storeId == storeId;
+                      
+        // Allow update if user is the owner
+        allow update: if isAuthenticated() && isStoreMember(storeId) && 
+                      isValidSavedList(request.resource.data) &&
+                      request.resource.data.storeId == storeId &&
+                      resource.data.userId == request.auth.uid;
+                      
+        // Allow delete if user is the owner or store admin
+        allow delete: if isAuthenticated() && isStoreMember(storeId) && 
+                      (isStoreAdmin(storeId) || resource.data.userId == request.auth.uid);
+      }
+    }
+  }
+}

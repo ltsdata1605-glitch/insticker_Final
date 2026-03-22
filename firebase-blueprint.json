@@ -1,0 +1,96 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "Stores user profile information and role.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique identifier for the user (matches Auth UID)." },
+        "email": { "type": "string", "format": "email", "description": "User's email address." },
+        "role": { "type": "string", "enum": ["admin", "staff"], "description": "User's role." },
+        "storeId": { "type": "string", "description": "Store ID (Mã kho siêu thị)." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when the user was created." }
+      },
+      "required": ["uid", "email", "role", "storeId", "createdAt"]
+    },
+    "products": {
+      "title": "Product",
+      "description": "Stores product information uploaded by admin.",
+      "type": "object",
+      "properties": {
+        "msp": { "type": "string", "description": "Product code (Mã sản phẩm)." },
+        "sanPham": { "type": "string", "description": "Product name." },
+        "thuongERP": { "type": "number", "description": "ERP bonus points." },
+        "thuongNong": { "type": "number", "description": "Hot bonus points." },
+        "tongThuong": { "type": "number", "description": "Total bonus points." },
+        "giaGoc": { "type": "string", "description": "Original price." },
+        "giaGiam": { "type": "string", "description": "Discounted price." },
+        "khuyenMai": { "type": "string", "description": "Promotion details." },
+        "ngayIn": { "type": "string", "description": "Print date." },
+        "storeId": { "type": "string", "description": "Store ID this product belongs to." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp." }
+      },
+      "required": ["msp", "sanPham", "storeId", "updatedAt"]
+    },
+    "inventory": {
+      "title": "Inventory Item",
+      "description": "Stores inventory details uploaded by admin.",
+      "type": "object",
+      "properties": {
+        "maSieuThi": { "type": "string", "description": "Store ID." },
+        "tenSieuThi": { "type": "string", "description": "Store Name." },
+        "thuongHieu": { "type": "string", "description": "Brand." },
+        "nganhHang": { "type": "string", "description": "Category." },
+        "nhomHang": { "type": "string", "description": "Sub-category." },
+        "maSanPham": { "type": "string", "description": "Product Code." },
+        "tenSanPham": { "type": "string", "description": "Product Name." },
+        "trangThaiKinhDoanh": { "type": "string", "description": "Business Status." },
+        "trangThaiSanPham": { "type": "string", "description": "Product Status." },
+        "tongSoLuong": { "type": "number", "description": "Total Quantity." },
+        "soLuongDiDuong": { "type": "number", "description": "In-transit Quantity." },
+        "soLuongThucTe": { "type": "number", "description": "Actual Quantity." },
+        "soLuongDaDat": { "type": "number", "description": "Ordered Quantity." },
+        "soLuongCoTheBan": { "type": "number", "description": "Sellable Quantity." },
+        "sucBan": { "type": "string", "description": "Sales Velocity." },
+        "saleAverage": { "type": "number", "description": "Average Sales." },
+        "saleEstimate": { "type": "number", "description": "Estimated Sales." },
+        "storeId": { "type": "string", "description": "Store ID for querying." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp." }
+      },
+      "required": ["maSieuThi", "maSanPham", "storeId", "updatedAt"]
+    },
+    "savedLists": {
+      "title": "Saved List",
+      "description": "Stores user-saved lists of products.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the list." },
+        "name": { "type": "string", "description": "Name of the saved list." },
+        "userId": { "type": "string", "description": "ID of the user who created the list." },
+        "storeId": { "type": "string", "description": "Store ID this list belongs to." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp." },
+        "items": { "type": "string", "description": "JSON stringified array of products." },
+        "totalItems": { "type": "number", "description": "Total number of items in the list." }
+      },
+      "required": ["id", "name", "userId", "storeId", "createdAt", "items", "totalItems"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "users",
+      "description": "User profiles, keyed by Auth UID."
+    },
+    "stores/{storeId}/products/{productId}": {
+      "schema": "products",
+      "description": "Products scoped by store."
+    },
+    "stores/{storeId}/inventory/{inventoryId}": {
+      "schema": "inventory",
+      "description": "Inventory items scoped by store."
+    },
+    "stores/{storeId}/savedLists/{listId}": {
+      "schema": "savedLists",
+      "description": "Saved lists scoped by store."
+    }
+  }
+}
